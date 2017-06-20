@@ -12,8 +12,10 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 )
 
-const defaultSSHPort = 22
-const defaultSSHUser = "core"
+const (
+	defaultSSHPort = 22
+	defaultSSHUser = "core"
+)
 
 func newSSHClient(config *Config) (*ssh.Client, error) {
 	var authMethod ssh.AuthMethod

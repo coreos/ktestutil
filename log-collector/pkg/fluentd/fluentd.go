@@ -9,15 +9,25 @@ import (
 	"k8s.io/client-go/pkg/api/v1"
 )
 
+const (
+	fluentMasterNodeAnnotation = "log-collector.github.com/fluentd-master"
+)
+
+// CreateAssets creates fluent master deployment and fluent worker daemonset.
+// all fluent workers stream their local logs to the fluent master.
+// fluent master writes all the logs to the disk at `/var/log/log-collector/`
+// fluent master is pinned to a master node with annotation `log-collector.github.com/fluentd-master`
+//
+// CreateAssets waits for fluent master pod and atleast one fluent worker pod to be running
 func CreateAssets(client kubernetes.Interface, namespace string) error {
 	// tag one of the masters
 	nl, err := client.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
 	if err != nil || len(nl.Items) == 0 {
-		return fmt.Errorf("couldn't find master node %v", err)
+		return fmt.Errorf("couldn't find master node to run fluent master %v", err)
 	}
 
 	n := nl.Items[0]
-	n.ObjectMeta.Labels["log-collector.github.com/fluentd-master"] = ""
+	n.ObjectMeta.Labels[fluentMasterNodeAnnotation] = ""
 
 	if _, err := client.CoreV1().Nodes().Update(&n); err != nil {
 		return fmt.Errorf("couldn't tag one of the master nodes %v", err)
@@ -44,17 +54,19 @@ func CreateAssets(client kubernetes.Interface, namespace string) error {
 		return fmt.Errorf("error creating fluentd asset %v", err)
 	}
 
-	if err := retry(10, time.Second*10, checkmaster(client, namespace)); err != nil {
+	if err := retry(10, time.Second*10, waitPodReadyOnMaster(client, namespace)); err != nil {
 		return err
 	}
 
-	if err := retry(10, time.Second*10, checkworker(client, namespace)); err != nil {
+	if err := retry(10, time.Second*10, waitPodReadyOnWorker(client, namespace)); err != nil {
 		return err
 	}
 
 	return nil
 }
 
+// DeleteAssets deletes all the fluentd assets.
+// Also removes all node annotations
 func DeleteAssets(client kubernetes.Interface, namespace string) error {
 	if err := deleteMasterCfg(client, namespace); err != nil {
 		return fmt.Errorf("error deleting fluentd asset %v", err)
@@ -76,21 +88,23 @@ func DeleteAssets(client kubernetes.Interface, namespace string) error {
 		return fmt.Errorf("error deleting fluentd asset %v", err)
 	}
 
-	nl, err := client.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: "log-collector.github.com/fluentd-master="})
+	labelSelc := fmt.Printf("%s=", fluentMasterNodeAnnotation)
+	nl, err := client.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: labelSelc})
 	if err != nil || len(nl.Items) == 0 {
-		return fmt.Errorf("couldn't find master node %v", err)
+		return fmt.Errorf("couldn't find master node running fluent master %v", err)
 	}
 
 	n := nl.Items[0]
-	delete(n.ObjectMeta.Labels, "log-collector.github.com/fluentd-master")
+	delete(n.ObjectMeta.Labels, fluentMasterNodeAnnotation)
 
 	if _, err := client.CoreV1().Nodes().Update(&n); err != nil {
-		return fmt.Errorf("couldn't tag one of the master nodes %v", err)
+		return fmt.Errorf("couldn't delete annotation from the master node running fluent master %v", err)
 	}
 
 	return nil
 }
 
+// GetNodeAddressWithMaster return PublicAddressableIP of the master node that is running fluent master
 func GetNodeAddressWithMaster(client kubernetes.Interface, namespace string) (string, error) {
 	pl, err := client.CoreV1().Pods(namespace).List(metav1.ListOptions{LabelSelector: "k8s-app=fluentd-master,tier=control-plane"})
 	if err != nil || len(pl.Items) == 0 {
@@ -145,7 +159,7 @@ func retry(attempts int, delay time.Duration, f func() error) error {
 	return err
 }
 
-func checkmaster(client kubernetes.Interface, namespace string) func() error {
+func waitPodReadyOnMaster(client kubernetes.Interface, namespace string) func() error {
 	return func() error {
 		l, err := client.CoreV1().Pods(namespace).List(metav1.ListOptions{LabelSelector: "k8s-app=fluentd-master"})
 		if err != nil || len(l.Items) == 0 {
@@ -162,7 +176,7 @@ func checkmaster(client kubernetes.Interface, namespace string) func() error {
 	}
 }
 
-func checkworker(client kubernetes.Interface, namespace string) func() error {
+func waitPodReadyOnWorker(client kubernetes.Interface, namespace string) func() error {
 	return func() error {
 		l, err := client.CoreV1().Pods(namespace).List(metav1.ListOptions{LabelSelector: "k8s-app=fluentd-worker"})
 		if err != nil || len(l.Items) == 0 {

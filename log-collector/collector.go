@@ -14,6 +14,11 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// Output interface describes where the log file is uploaded
+//
+// Put accepts an 'io.ReadSeeker' of the log file and the 'filename' at the destination.
+// Put returns the 'absolute (accessible) location' of the log file at the destination
+// and an error if the file put was unsuccessful
 type Output interface {
 	Put(io.ReadSeeker, string) (string, error)
 }
@@ -26,6 +31,12 @@ type Collector struct {
 	Output Output
 }
 
+// Config defines configuration options for the Collector
+//
+// Requires K8sClient and Namespce.
+// If RemoteKeyFile is empty uses SSH_AUTH_SOCK to establish ssh connection.
+// If RemoteUser is empty 'core' is used as default user for ssh connection.
+// If RemotePort is empty '22' is used as default port for ssh connection.
 type Config struct {
 	RemoteUser    string
 	RemotePort    int32
@@ -34,6 +45,7 @@ type Config struct {
 	Namespace     string
 }
 
+// New returns *Collector given a *Config
 func New(c *Config) *Collector {
 	return &Collector{
 		scpConfig: &scp.Config{
@@ -46,7 +58,8 @@ func New(c *Config) *Collector {
 	}
 }
 
-func (cr *Collector) WithLocalOuput(dstDir string) error {
+// OutputToLocal sets the Collector output to local dir dstDir
+func (cr *Collector) OutputToLocal(dstDir string) error {
 	l, err := local.New(&local.Config{
 		Dir: dstDir,
 	})
@@ -58,7 +71,8 @@ func (cr *Collector) WithLocalOuput(dstDir string) error {
 	return nil
 }
 
-func (cr *Collector) WithS3Output(keyId, keySecret, region, bucketName, bucketPrefix string) error {
+// OutputToS3 sets the Collector output to S3 bucket, given proper credentials
+func (cr *Collector) OutputToS3(keyId, keySecret, region, bucketName, bucketPrefix string) error {
 	s3, err := s3.New(&s3.Config{
 		AccessKeyId:     keyId,
 		AccessKeySecret: keySecret,
@@ -74,6 +88,8 @@ func (cr *Collector) WithS3Output(keyId, keySecret, region, bucketName, bucketPr
 	return nil
 }
 
+// Start creates the fluentd master and worker assets for log collection.
+// it also registers the node that is running the fluentd master
 func (cr *Collector) Start() error {
 	if err := fluentd.CreateAssets(cr.k8s, cr.namespace); err != nil {
 		return err
@@ -87,6 +103,11 @@ func (cr *Collector) Start() error {
 	return nil
 }
 
+// CollectPodLogs fetches the log file(s) for the pods matching basic shell file name pattern
+// and uploads all the file(s).
+// It returns the list locations where the log(s) were uploaded.
+// for example, pattern 'kube-*' returns kube-apiserver, kube-scheduler etc.
+// and 'apiserver' returns kube-apiserver
 func (cr *Collector) CollectPodLogs(pod string) ([]string, error) {
 	scp, err := scp.NewClient(cr.scpConfig)
 	if err != nil {
@@ -103,6 +124,9 @@ func (cr *Collector) CollectPodLogs(pod string) ([]string, error) {
 	return results, nil
 }
 
+// CollectServiceLogs fetches the log file(s) for the services matching basic shell file name pattern
+// and uploads all the file(s).
+// It returns the list locations where the log(s) were uploaded.
 func (cr *Collector) CollectServiceLogs(service string) ([]string, error) {
 	scp, err := scp.NewClient(cr.scpConfig)
 	if err != nil {
@@ -164,6 +188,7 @@ func (cr *Collector) upload(scp *scp.Scp, paths []string) []string {
 	return results
 }
 
+// Cleanup deletes the fluentd assets and removes all annotations that were created on nodes
 func (cr *Collector) Cleanup() error {
 	if err := fluentd.DeleteAssets(cr.k8s, cr.namespace); err != nil {
 		return err

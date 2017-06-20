@@ -24,7 +24,7 @@ func testPod(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := cr.WithLocalOuput(dir); err != nil {
+	if err := cr.OutputToLocal(dir); err != nil {
 		t.Fatalf("error init local output %v", err)
 	}
 
@@ -46,7 +46,7 @@ func testService(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := cr.WithLocalOuput(dir); err != nil {
+	if err := cr.OutputToLocal(dir); err != nil {
 		t.Fatalf("error init local output %v", err)
 	}
 

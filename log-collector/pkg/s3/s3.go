@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
+// Config defines configuration for s3 output
 type Config struct {
 	AccessKeyId     string
 	AccessKeySecret string
@@ -22,12 +23,16 @@ type Config struct {
 	Region          string
 }
 
+// S3 implements Collector.Ouput Interface
+// S3 allows the logs to be uploaded to S3 bucket with defined prefix
 type S3 struct {
 	client       *s3manager.Uploader
 	bucketName   string
 	bucketPrefix string
 }
 
+// New returns *S3
+// It performs an authentication of the specified credentials and returns error if failed
 func New(config *Config) (*S3, error) {
 	creds := credentials.NewStaticCredentials(config.AccessKeyId, config.AccessKeySecret, "")
 	var err error
@@ -50,6 +55,9 @@ func New(config *Config) (*S3, error) {
 	}, nil
 }
 
+// Put uploads the data from f io.ReadSeeker to S3 bucket with bucketprefix.
+// Put uses s3manager to upload large files in parts concurrently.
+// Put returns the URL of the file in the bucket (the url can be used to access the file only if the bucket permissions allow).
 func (s *S3) Put(f io.ReadSeeker, dst string) (string, error) {
 	path := filepath.Join(s.bucketPrefix, dst)
 	params := &s3manager.UploadInput{
