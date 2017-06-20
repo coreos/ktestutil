@@ -125,12 +125,6 @@ data:
       </store>
     </match>
 
-    <filter kubernetes.**>
-      @type record_transformer
-      <record>
-        hostname "#{Socket.gethostname}"
-      </record>
-    </filter>
   systemd.conf: |-
     <source>
       type systemd
@@ -150,11 +144,8 @@ data:
 
     <filter service.**>
       @type record_transformer
-      <record>
-        hostname "#{Socket.gethostname}"
-      </record>
       renew_record
-      keep_keys MESSAGE,hostname
+      keep_keys MESSAGE
     </filter>
 
   fluent.conf: |-

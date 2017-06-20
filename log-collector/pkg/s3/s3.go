@@ -1,10 +1,9 @@
 package s3
 
 import (
+	"fmt"
 	"io"
 	"path/filepath"
-
-	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"

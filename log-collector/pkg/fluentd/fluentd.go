@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/coreos/ktestutil/utils"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api/v1"
@@ -20,15 +22,13 @@ const (
 //
 // CreateAssets waits for fluent master pod and atleast one fluent worker pod to be running
 func CreateAssets(client kubernetes.Interface, namespace string) error {
-	// tag one of the masters
+	// select and tag one of the masters
 	nl, err := client.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
 	if err != nil || len(nl.Items) == 0 {
 		return fmt.Errorf("couldn't find master node to run fluent master %v", err)
 	}
-
 	n := nl.Items[0]
 	n.ObjectMeta.Labels[fluentMasterNodeAnnotation] = ""
-
 	if _, err := client.CoreV1().Nodes().Update(&n); err != nil {
 		return fmt.Errorf("couldn't tag one of the master nodes %v", err)
 	}
@@ -37,11 +37,9 @@ func CreateAssets(client kubernetes.Interface, namespace string) error {
 	if err := createMasterCfg(client, namespace); err != nil {
 		return fmt.Errorf("error creating fluentd asset %v", err)
 	}
-
 	if err := createMasterDeploy(client, namespace); err != nil {
 		return fmt.Errorf("error creating fluentd asset %v", err)
 	}
-
 	if err := createMasterSvc(client, namespace); err != nil {
 		return fmt.Errorf("error creating fluentd asset %v", err)
 	}
@@ -49,16 +47,14 @@ func CreateAssets(client kubernetes.Interface, namespace string) error {
 	if err := createWorkerCfg(client, namespace); err != nil {
 		return fmt.Errorf("error creating fluentd asset %v", err)
 	}
-
 	if err := createWorkerDs(client, namespace); err != nil {
 		return fmt.Errorf("error creating fluentd asset %v", err)
 	}
 
-	if err := retry(10, time.Second*10, waitPodReadyOnMaster(client, namespace)); err != nil {
+	if err := utils.Retry(10, time.Second*10, waitPodReadyOnMaster(client, namespace)); err != nil {
 		return err
 	}
-
-	if err := retry(10, time.Second*10, waitPodReadyOnWorker(client, namespace)); err != nil {
+	if err := utils.Retry(10, time.Second*10, waitPodReadyOnWorker(client, namespace)); err != nil {
 		return err
 	}
 
@@ -71,11 +67,9 @@ func DeleteAssets(client kubernetes.Interface, namespace string) error {
 	if err := deleteMasterCfg(client, namespace); err != nil {
 		return fmt.Errorf("error deleting fluentd asset %v", err)
 	}
-
 	if err := deleteMasterDeploy(client, namespace); err != nil {
 		return fmt.Errorf("error deleting fluentd asset %v", err)
 	}
-
 	if err := deleteMasterSvc(client, namespace); err != nil {
 		return fmt.Errorf("error deleting fluentd asset %v", err)
 	}
@@ -83,20 +77,17 @@ func DeleteAssets(client kubernetes.Interface, namespace string) error {
 	if err := deleteWorkerCfg(client, namespace); err != nil {
 		return fmt.Errorf("error deleting fluentd asset %v", err)
 	}
-
 	if err := deleteWorkerDs(client, namespace); err != nil {
 		return fmt.Errorf("error deleting fluentd asset %v", err)
 	}
 
-	labelSelc := fmt.Printf("%s=", fluentMasterNodeAnnotation)
+	labelSelc := fmt.Sprintf("%s=", fluentMasterNodeAnnotation)
 	nl, err := client.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: labelSelc})
 	if err != nil || len(nl.Items) == 0 {
 		return fmt.Errorf("couldn't find master node running fluent master %v", err)
 	}
-
 	n := nl.Items[0]
 	delete(n.ObjectMeta.Labels, fluentMasterNodeAnnotation)
-
 	if _, err := client.CoreV1().Nodes().Update(&n); err != nil {
 		return fmt.Errorf("couldn't delete annotation from the master node running fluent master %v", err)
 	}
@@ -140,23 +131,6 @@ func GetNodeAddressWithMaster(client kubernetes.Interface, namespace string) (st
 	}
 
 	return host, nil
-}
-
-func retry(attempts int, delay time.Duration, f func() error) error {
-	var err error
-
-	for i := 0; i < attempts; i++ {
-		err = f()
-		if err == nil {
-			break
-		}
-
-		if i < attempts-1 {
-			time.Sleep(delay)
-		}
-	}
-
-	return err
 }
 
 func waitPodReadyOnMaster(client kubernetes.Interface, namespace string) func() error {

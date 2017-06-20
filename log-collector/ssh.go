@@ -1,12 +1,10 @@
-package scp
+package collector
 
 import (
+	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"os"
-
-	"fmt"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -17,11 +15,10 @@ const (
 	defaultSSHUser = "core"
 )
 
-func newSSHClient(config *Config) (*ssh.Client, error) {
+func newSSHClient(config *scpConfig) (*ssh.Client, error) {
 	var authMethod ssh.AuthMethod
 	sock := os.Getenv("SSH_AUTH_SOCK")
 	if config.IdentifyKeyFile != "" {
-		log.Println("Creating ssh client with private key")
 		key, err := ioutil.ReadFile(config.IdentifyKeyFile)
 		if err != nil {
 			return nil, err
@@ -34,7 +31,6 @@ func newSSHClient(config *Config) (*ssh.Client, error) {
 
 		authMethod = ssh.PublicKeys(signer)
 	} else if sock != "" {
-		log.Println("Creating ssh client with ssh agent")
 		sshAgent, err := net.Dial("unix", sock)
 		if err != nil {
 			return nil, err
@@ -42,7 +38,7 @@ func newSSHClient(config *Config) (*ssh.Client, error) {
 
 		authMethod = ssh.PublicKeysCallback(agent.NewClient(sshAgent).Signers)
 	} else {
-		return nil, fmt.Errorf("No ssh connection authentication provided")
+		return nil, fmt.Errorf("no ssh connection authentication provided")
 	}
 
 	if config.User == "" {

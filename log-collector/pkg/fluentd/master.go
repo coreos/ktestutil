@@ -112,6 +112,7 @@ data:
       <template>
         time_slice_format %Y%m%d
         path /var/log/log-collector/container.${tag_parts[1]}.${tag_parts[0]}.*.log
+        format json
         append true
         flush_interval 10s
         flush_at_shutdown true
@@ -125,6 +126,7 @@ data:
       <template>
         time_slice_format %Y%m%d
         path /var/log/log-collector/service.${tag_parts[1]}.${tag_parts[0]}.*.log
+        format json
         append true    
         flush_interval 10s
         flush_at_shutdown true

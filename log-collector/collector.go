@@ -9,7 +9,6 @@ import (
 	"github.com/coreos/ktestutil/log-collector/pkg/fluentd"
 	"github.com/coreos/ktestutil/log-collector/pkg/local"
 	"github.com/coreos/ktestutil/log-collector/pkg/s3"
-	"github.com/coreos/ktestutil/log-collector/pkg/scp"
 
 	"k8s.io/client-go/kubernetes"
 )
@@ -23,8 +22,9 @@ type Output interface {
 	Put(io.ReadSeeker, string) (string, error)
 }
 
+// Collector provides functions to collect logs
 type Collector struct {
-	scpConfig *scp.Config
+	scpConfig *scpConfig
 	namespace string
 	k8s       kubernetes.Interface
 
@@ -48,7 +48,7 @@ type Config struct {
 // New returns *Collector given a *Config
 func New(c *Config) *Collector {
 	return &Collector{
-		scpConfig: &scp.Config{
+		scpConfig: &scpConfig{
 			User:            c.RemoteUser,
 			Port:            c.RemotePort,
 			IdentifyKeyFile: c.RemoteKeyFile,
@@ -103,13 +103,13 @@ func (cr *Collector) Start() error {
 	return nil
 }
 
-// CollectPodLogs fetches the log file(s) for the pods matching basic shell file name pattern
+// CollectPodLogs fetches the log file(s) for the pods name matching basic shell file name pattern
 // and uploads all the file(s).
 // It returns the list locations where the log(s) were uploaded.
 // for example, pattern 'kube-*' returns kube-apiserver, kube-scheduler etc.
 // and 'apiserver' returns kube-apiserver
 func (cr *Collector) CollectPodLogs(pod string) ([]string, error) {
-	scp, err := scp.NewClient(cr.scpConfig)
+	scp, err := newScpClient(cr.scpConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -120,15 +120,15 @@ func (cr *Collector) CollectPodLogs(pod string) ([]string, error) {
 		return nil, err
 	}
 
-	results := cr.upload(scp, paths)
+	results := upload(scp, cr.Output, paths)
 	return results, nil
 }
 
-// CollectServiceLogs fetches the log file(s) for the services matching basic shell file name pattern
+// CollectServiceLogs fetches the log file(s) for the services name matching basic shell file name pattern
 // and uploads all the file(s).
 // It returns the list locations where the log(s) were uploaded.
 func (cr *Collector) CollectServiceLogs(service string) ([]string, error) {
-	scp, err := scp.NewClient(cr.scpConfig)
+	scp, err := newScpClient(cr.scpConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -139,11 +139,11 @@ func (cr *Collector) CollectServiceLogs(service string) ([]string, error) {
 		return nil, err
 	}
 
-	results := cr.upload(scp, paths)
+	results := upload(scp, cr.Output, paths)
 	return results, nil
 }
 
-func (cr *Collector) upload(scp *scp.Scp, paths []string) []string {
+func upload(scp *scp, o Output, paths []string) []string {
 	var results []string
 	resp := make(chan string)
 	go func() {
@@ -172,7 +172,7 @@ func (cr *Collector) upload(scp *scp.Scp, paths []string) []string {
 				return
 			}
 			defer f.Close()
-			loc, err := cr.Output.Put(f, filepath.Base(f.Name()))
+			loc, err := o.Put(f, filepath.Base(f.Name()))
 			if err != nil {
 				log.Printf("skipping upload for file %s %v", fpath, err)
 				return

@@ -1,4 +1,4 @@
-package scp
+package collector
 
 import (
 	"fmt"
@@ -7,19 +7,19 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-type Config struct {
+type scpConfig struct {
 	User            string
 	Host            string
 	Port            int32
 	IdentifyKeyFile string
 }
 
-type Scp struct {
+type scp struct {
 	conn   *ssh.Client
 	client *sftp.Client
 }
 
-func NewClient(config *Config) (*Scp, error) {
+func newScpClient(config *scpConfig) (*scp, error) {
 	conn, err := newSSHClient(config)
 	if err != nil {
 		return nil, err
@@ -30,27 +30,27 @@ func NewClient(config *Config) (*Scp, error) {
 		return nil, err
 	}
 
-	return &Scp{
+	return &scp{
 		conn:   conn,
 		client: client,
 	}, nil
 }
 
-func (s *Scp) Close() {
+func (s *scp) Close() {
 	s.client.Close()
 	s.conn.Close()
 }
 
-func (s *Scp) GetPodsFilePaths(pod string) ([]string, error) {
+func (s *scp) GetPodsFilePaths(pod string) ([]string, error) {
 	pattern := fmt.Sprintf("/var/log/log-collector/container.*%s*.log", pod)
 	return s.client.Glob(pattern)
 }
 
-func (s *Scp) GetServicesFilePaths(name string) ([]string, error) {
+func (s *scp) GetServicesFilePaths(name string) ([]string, error) {
 	pattern := fmt.Sprintf("/var/log/log-collector/service.*%s*.log", name)
 	return s.client.Glob(pattern)
 }
 
-func (s *Scp) Open(path string) (*sftp.File, error) {
+func (s *scp) Open(path string) (*sftp.File, error) {
 	return s.client.Open(path)
 }
