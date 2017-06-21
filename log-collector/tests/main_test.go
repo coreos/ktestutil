@@ -9,6 +9,7 @@ import (
 	"time"
 
 	collector "github.com/coreos/ktestutil/log-collector"
+	"github.com/coreos/ktestutil/utils"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -144,47 +145,8 @@ func ready(c kubernetes.Interface) error {
 		return nil
 	}
 
-	if err := retry(50, 10*time.Second, f); err != nil {
+	if err := utils.Retry(50, 10*time.Second, f); err != nil {
 		return err
-	}
-	return nil
-}
-
-func retry(attempts int, delay time.Duration, f func() error) error {
-	var err error
-
-	for i := 0; i < attempts; i++ {
-		err = f()
-		if err == nil {
-			break
-		}
-
-		if i < attempts-1 {
-			time.Sleep(delay)
-		}
-	}
-
-	return err
-}
-
-func checkmaster() error {
-	d, err := client.ExtensionsV1beta1().Deployments(namespace).Get("fluentd-master", metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("fluentd-master not found %v", err)
-	}
-	if d.Status.Replicas != d.Status.AvailableReplicas {
-		return fmt.Errorf("fluentd-master has not succeded: replicas running %d required %d", d.Status.AvailableReplicas, d.Status.Replicas)
-	}
-	return nil
-}
-
-func checkworker() error {
-	ds, err := client.ExtensionsV1beta1().DaemonSets(namespace).Get("fluentd-worker", metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("fluentd-worker not found %v", err)
-	}
-	if ds.Status.DesiredNumberScheduled != ds.Status.NumberReady {
-		return fmt.Errorf("fluentd-worker has not succeded: replicas running %d required %d", ds.Status.NumberReady, ds.Status.DesiredNumberScheduled)
 	}
 	return nil
 }

@@ -19,7 +19,7 @@ func TestS3Output(t *testing.T) {
 }
 
 func testS3Pod(t *testing.T) {
-	if err := cr.OutputToS3(os.Getenv("AWS_ACCESS_KEY_ID"), os.Getenv("AWS_SECRET_ACCESS_KEY"), os.Getenv("AWS_REGION"), "abhinav-log-collector", "a1"); err != nil {
+	if err := cr.SetOutputToS3(os.Getenv("AWS_ACCESS_KEY_ID"), os.Getenv("AWS_SECRET_ACCESS_KEY"), os.Getenv("AWS_REGION"), "abhinav-log-collector", "a1"); err != nil {
 		t.Fatalf("error connecting to s3 %v", err)
 	}
 
@@ -35,7 +35,7 @@ func testS3Pod(t *testing.T) {
 }
 
 func testS3Service(t *testing.T) {
-	if err := cr.OutputToS3(os.Getenv("AWS_ACCESS_KEY_ID"), os.Getenv("AWS_SECRET_ACCESS_KEY"), os.Getenv("AWS_REGION"), "abhinav-log-collector", "a1"); err != nil {
+	if err := cr.SetOutputToS3(os.Getenv("AWS_ACCESS_KEY_ID"), os.Getenv("AWS_SECRET_ACCESS_KEY"), os.Getenv("AWS_REGION"), "abhinav-log-collector", "a1"); err != nil {
 		t.Fatalf("error connecting to s3 %v", err)
 	}
 

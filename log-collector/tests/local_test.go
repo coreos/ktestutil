@@ -24,7 +24,9 @@ func testPod(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := cr.OutputToLocal(dir); err != nil {
+	defer os.RemoveAll(dir)
+
+	if err := cr.SetOutputToLocal(dir); err != nil {
 		t.Fatalf("error init local output %v", err)
 	}
 
@@ -37,8 +39,6 @@ func testPod(t *testing.T) {
 		t.Fatalf("alteast one container exists but not found")
 	}
 	t.Log(results)
-
-	os.RemoveAll(dir)
 }
 
 func testService(t *testing.T) {
@@ -46,7 +46,9 @@ func testService(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := cr.OutputToLocal(dir); err != nil {
+	defer os.RemoveAll(dir)
+
+	if err := cr.SetOutputToLocal(dir); err != nil {
 		t.Fatalf("error init local output %v", err)
 	}
 
@@ -59,6 +61,4 @@ func testService(t *testing.T) {
 		t.Fatalf("alteast one service exists but not found")
 	}
 	t.Log(results)
-
-	os.RemoveAll(dir)
 }

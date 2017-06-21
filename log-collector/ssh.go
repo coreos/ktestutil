@@ -18,8 +18,8 @@ const (
 func newSSHClient(config *scpConfig) (*ssh.Client, error) {
 	var authMethod ssh.AuthMethod
 	sock := os.Getenv("SSH_AUTH_SOCK")
-	if config.IdentifyKeyFile != "" {
-		key, err := ioutil.ReadFile(config.IdentifyKeyFile)
+	if config.identifyKeyFile != "" {
+		key, err := ioutil.ReadFile(config.identifyKeyFile)
 		if err != nil {
 			return nil, err
 		}
@@ -41,20 +41,20 @@ func newSSHClient(config *scpConfig) (*ssh.Client, error) {
 		return nil, fmt.Errorf("no ssh connection authentication provided")
 	}
 
-	if config.User == "" {
-		config.User = defaultSSHUser
+	if config.user == "" {
+		config.user = defaultSSHUser
 	}
 	sshConfig := &ssh.ClientConfig{
-		User:            config.User,
+		User:            config.user,
 		Auth:            []ssh.AuthMethod{authMethod},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 	sshConfig.SetDefaults()
 
-	if config.Port == 0 {
-		config.Port = defaultSSHPort
+	if config.port == 0 {
+		config.port = defaultSSHPort
 	}
-	endpoint := fmt.Sprintf("%s:%d", config.Host, config.Port)
+	endpoint := fmt.Sprintf("%s:%d", config.host, config.port)
 	client, err := ssh.Dial("tcp", endpoint, sshConfig)
 	if err != nil {
 		return nil, err

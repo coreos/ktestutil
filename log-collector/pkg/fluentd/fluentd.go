@@ -15,17 +15,17 @@ const (
 	fluentMasterNodeAnnotation = "log-collector.github.com/fluentd-master"
 )
 
-// CreateAssets creates fluent master deployment and fluent worker daemonset.
-// all fluent workers stream their local logs to the fluent master.
-// fluent master writes all the logs to the disk at `/var/log/log-collector/`
-// fluent master is pinned to a master node with annotation `log-collector.github.com/fluentd-master`
+// CreateAssets creates fluentd master deployment and fluentd worker daemonset.
+// all fluentd workers stream their local logs to the fluentd master.
+// fluentd master writes all the logs to the disk at `/var/log/log-collector/`
+// fluentd master is pinned to a master node with annotation `log-collector.github.com/fluentd-master`.
 //
-// CreateAssets waits for fluent master pod and atleast one fluent worker pod to be running
+// CreateAssets waits for fluentd master pod and at least one fluentd worker pod to be running.
 func CreateAssets(client kubernetes.Interface, namespace string) error {
 	// select and tag one of the masters
 	nl, err := client.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
 	if err != nil || len(nl.Items) == 0 {
-		return fmt.Errorf("couldn't find master node to run fluent master %v", err)
+		return fmt.Errorf("couldn't find master node to run fluentd master %v", err)
 	}
 	n := nl.Items[0]
 	n.ObjectMeta.Labels[fluentMasterNodeAnnotation] = ""
@@ -62,7 +62,7 @@ func CreateAssets(client kubernetes.Interface, namespace string) error {
 }
 
 // DeleteAssets deletes all the fluentd assets.
-// Also removes all node annotations
+// Also removes all node annotations.
 func DeleteAssets(client kubernetes.Interface, namespace string) error {
 	if err := deleteMasterCfg(client, namespace); err != nil {
 		return fmt.Errorf("error deleting fluentd asset %v", err)
@@ -84,18 +84,18 @@ func DeleteAssets(client kubernetes.Interface, namespace string) error {
 	labelSelc := fmt.Sprintf("%s=", fluentMasterNodeAnnotation)
 	nl, err := client.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: labelSelc})
 	if err != nil || len(nl.Items) == 0 {
-		return fmt.Errorf("couldn't find master node running fluent master %v", err)
+		return fmt.Errorf("couldn't find master node running fluentd master %v", err)
 	}
 	n := nl.Items[0]
 	delete(n.ObjectMeta.Labels, fluentMasterNodeAnnotation)
 	if _, err := client.CoreV1().Nodes().Update(&n); err != nil {
-		return fmt.Errorf("couldn't delete annotation from the master node running fluent master %v", err)
+		return fmt.Errorf("couldn't delete annotation from the master node running fluentd master %v", err)
 	}
 
 	return nil
 }
 
-// GetNodeAddressWithMaster return PublicAddressableIP of the master node that is running fluent master
+// GetNodeAddressWithMaster returns PublicAddressableIP of the master node that is running fluent master.
 func GetNodeAddressWithMaster(client kubernetes.Interface, namespace string) (string, error) {
 	pl, err := client.CoreV1().Pods(namespace).List(metav1.ListOptions{LabelSelector: "k8s-app=fluentd-master,tier=control-plane"})
 	if err != nil || len(pl.Items) == 0 {

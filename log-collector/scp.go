@@ -8,10 +8,10 @@ import (
 )
 
 type scpConfig struct {
-	User            string
-	Host            string
-	Port            int32
-	IdentifyKeyFile string
+	user            string
+	host            string
+	port            int32
+	identifyKeyFile string
 }
 
 type scp struct {
