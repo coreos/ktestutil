@@ -49,9 +49,9 @@ type Config struct {
 func New(c *Config) *Collector {
 	return &Collector{
 		scpConfig: &scpConfig{
-			User:            c.RemoteUser,
-			Port:            c.RemotePort,
-			IdentifyKeyFile: c.RemoteKeyFile,
+			user:            c.RemoteUser,
+			port:            c.RemotePort,
+			identifyKeyFile: c.RemoteKeyFile,
 		},
 		namespace: c.Namespace,
 		k8s:       c.K8sClient,

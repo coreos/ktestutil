@@ -7,13 +7,15 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/coreos/ktestutil/utils"
 )
 
 func TestLocalOutput(t *testing.T) {
 	empty := func() error {
 		return fmt.Errorf("format string")
 	}
-	retry(10, time.Second*10, empty)
+	utils.Retry(10, time.Second*10, empty)
 
 	t.Run("Pod", testPod)
 	t.Run("Service", testService)
