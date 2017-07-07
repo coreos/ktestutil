@@ -2,16 +2,13 @@ package tests
 
 import (
 	"testing"
-
-	"k8s.io/client-go/pkg/api/v1"
-
 	"time"
 
 	"github.com/coreos/ktestutil/nginx"
 	"github.com/coreos/ktestutil/utils"
 )
 
-func TestSucceededPing(t *testing.T) {
+func TestReachable(t *testing.T) {
 	nginx, err := nginx.NewNginx(client, namespace)
 	if err != nil {
 		t.Fatal(err)
@@ -19,12 +16,12 @@ func TestSucceededPing(t *testing.T) {
 	defer nginx.Delete()
 
 	if err := utils.Retry(10, 2*time.Second, func() error {
-		return nginx.Ping(v1.PodSucceeded)
+		return nginx.IsReachable()
 	}); err != nil {
 		t.Fatal(err)
 	}
 }
-func TestFailedPing(t *testing.T) {
+func TestUnReachable(t *testing.T) {
 	nginx, err := nginx.NewNginx(client, namespace)
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +29,7 @@ func TestFailedPing(t *testing.T) {
 	nginx.Delete()
 
 	if err := utils.Retry(10, 5*time.Second, func() error {
-		return nginx.Ping(v1.PodFailed)
+		return nginx.IsUnReachable()
 	}); err != nil {
 		t.Fatal(err)
 	}

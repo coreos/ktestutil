@@ -4,29 +4,30 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/coreos/ktestutil/utils"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api/v1"
 	extensionsv1beta1 "k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
+const (
+	pollTimeout  = 2 * time.Minute
+	pollInterval = 5 * time.Second
+)
+
 // Nginx contains information for nginx deployment/service pair.
 type Nginx struct {
 	Namespace string
-	// Name of the deployment
-	Name string
-	// Name of the service
-	SVCName string
+	Name      string
 	// List of pods that belong to the deployment
 	Pods []*v1.Pod
 
-	kc       kubernetes.Interface
+	client   kubernetes.Interface
 	labelSel *metav1.LabelSelector
 }
 
@@ -39,95 +40,85 @@ func NewNginx(kc kubernetes.Interface, namespace string) (*Nginx, error) {
 	n := &Nginx{
 		Namespace: namespace,
 		Name:      name,
-		SVCName:   name,
 		labelSel: &metav1.LabelSelector{
 			MatchLabels: map[string]string{
 				"app": name,
 			},
 		},
-		kc: kc,
+		client: kc,
 	}
 
 	//create nginx deployment
-	nd := n.getDeploymentSpecs()
-	if _, err := kc.ExtensionsV1beta1().Deployments(n.Namespace).Create(nd); err != nil {
-		return nil, fmt.Errorf("error creating %s: %v", n.Name, err)
+	if err := n.newNginxDeployment(); err != nil && !apierrors.IsAlreadyExists(err) {
+		return nil, fmt.Errorf("error creating deployment %s: %v", n.Name, err)
 	}
-	if err := utils.Retry(10, 5*time.Second, func() error {
+	if err := wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
 		d, err := kc.ExtensionsV1beta1().Deployments(n.Namespace).Get(n.Name, metav1.GetOptions{})
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		if d.Status.UpdatedReplicas != d.Status.AvailableReplicas && d.Status.UnavailableReplicas != 0 {
-			return fmt.Errorf("expected: %d ready: %d", d.Status.UpdatedReplicas, d.Status.AvailableReplicas)
+			return false, nil
 		}
 
-		return nil
+		return true, nil
 	}); err != nil {
-		return nil, fmt.Errorf("error creating %s: %v", n.Name, err)
+		return nil, fmt.Errorf("deployment %s is not ready: %v", n.Name, err)
 	}
 
 	//wait for all pods to enter running phase
-	if err := utils.Retry(10, 5*time.Second, func() error {
+	if err := wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
 		pl, err := kc.CoreV1().Pods(n.Namespace).List(metav1.ListOptions{
 			LabelSelector: metav1.FormatLabelSelector(n.labelSel),
 		})
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		if len(pl.Items) == 0 {
-			return fmt.Errorf("there should be non-zero no. of pods")
+			return false, nil
 		}
 
 		var pods []*v1.Pod
 		for i := range pl.Items {
 			p := &pl.Items[i]
 			if p.Status.Phase != v1.PodRunning {
-				return fmt.Errorf("pod %s not running", p.GetName())
+				return false, nil
 			}
 
 			pods = append(pods, p)
 		}
 
 		n.Pods = pods
-		return nil
+		return true, nil
 	}); err != nil {
-		return nil, fmt.Errorf("error creating %s: %v", n.Name, err)
+		return nil, fmt.Errorf("pods in deployment %s not ready: %v", n.Name, err)
 	}
 
 	//create nginx service
-	svc := n.getServiceSpecs()
-	if _, err := kc.CoreV1().Services(n.Namespace).Create(svc); err != nil {
-		return nil, fmt.Errorf("error creating service %s: %v", n.SVCName, err)
+	if err := n.newNginxService(); err != nil && !apierrors.IsAlreadyExists(err) {
+		return nil, fmt.Errorf("error creating service %s: %v", n.Name, err)
 	}
+
 	return n, nil
 }
 
-// Ping pings the nginx service.
-// runs `wget --timeout 5 <nginx-svc-name>`
-// expectedPhase is the phase you expect the ping pods to end up in.
-func (n *Nginx) Ping(expectedPhase v1.PodPhase) error {
-	pp := n.getPingPodSpecs()
-	if _, err := n.kc.CoreV1().Pods(n.Namespace).Create(pp); err != nil {
-		return err
+// IsReachable pings the nginx service.
+// Expects the nginx service to be reachable.
+func (n *Nginx) IsReachable() error {
+	if err := n.newPingPod(true); err != nil {
+		return fmt.Errorf("error svc wasn't reachable: %v", err)
 	}
 
-	// wait for pod state
-	if err := utils.Retry(5, 5*time.Second, func() error {
-		p, err := n.kc.CoreV1().Pods(n.Namespace).Get(pp.GetName(), metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
+	return nil
+}
 
-		if p.Status.Phase != expectedPhase {
-			return fmt.Errorf("expected phase: %v found: %v", expectedPhase, p.Status.Phase)
-		}
-
-		return nil
-	}); err != nil {
-		return err
+// IsUnReachable pings the nginx service.
+// Expects the nginx service to be unreachable.
+func (n *Nginx) IsUnReachable() error {
+	if err := n.newPingPod(false); err != nil {
+		return fmt.Errorf("error svc was reachable: %v", err)
 	}
 
 	return nil
@@ -136,33 +127,34 @@ func (n *Nginx) Ping(expectedPhase v1.PodPhase) error {
 // Delete deletes the deployment and service
 func (n *Nginx) Delete() error {
 	delPropPolicy := metav1.DeletePropagationForeground
-	if err := utils.Retry(10, 5*time.Second, func() error {
-		if err := n.kc.ExtensionsV1beta1().Deployments(n.Namespace).Delete(n.Name, &metav1.DeleteOptions{
+	if err := wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
+		if err := n.client.ExtensionsV1beta1().Deployments(n.Namespace).Delete(n.Name, &metav1.DeleteOptions{
 			PropagationPolicy: &delPropPolicy,
 		}); err != nil && !apierrors.IsNotFound(err) {
-			return err
+			return false, nil
 		}
 
-		if err := n.kc.CoreV1().Services(n.Namespace).Delete(n.SVCName, &metav1.DeleteOptions{
+		if err := n.client.CoreV1().Services(n.Namespace).Delete(n.Name, &metav1.DeleteOptions{
 			PropagationPolicy: &delPropPolicy,
 		}); err != nil && !apierrors.IsNotFound(err) {
-			return err
+			return false, nil
 		}
-		return nil
+		return true, nil
 	}); err != nil {
-		return err
+		return fmt.Errorf("error deleting %s deployment and serivce: %v", n.Name, err)
 	}
 
 	return nil
 }
 
-func (n *Nginx) getDeploymentSpecs() *extensionsv1beta1.Deployment {
-	var repl int32 = 2
-	var cPort int32 = 80
-
-	return &extensionsv1beta1.Deployment{
+func (n *Nginx) newNginxDeployment() error {
+	var (
+		repl  int32 = 2
+		cPort int32 = 80
+	)
+	d := &extensionsv1beta1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      n.SVCName,
+			Name:      n.Name,
 			Namespace: n.Namespace,
 		},
 		Spec: extensionsv1beta1.DeploymentSpec{
@@ -188,13 +180,19 @@ func (n *Nginx) getDeploymentSpecs() *extensionsv1beta1.Deployment {
 			},
 		},
 	}
+	if _, err := n.client.ExtensionsV1beta1().Deployments(n.Namespace).Create(d); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func (n *Nginx) getServiceSpecs() *v1.Service {
-	var cPort int32 = 80
-	var tPort int32 = 80
-
-	return &v1.Service{
+func (n *Nginx) newNginxService() error {
+	var (
+		cPort int32 = 80
+		tPort int32 = 80
+	)
+	svc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      n.Name,
 			Namespace: n.Namespace,
@@ -210,11 +208,23 @@ func (n *Nginx) getServiceSpecs() *v1.Service {
 			},
 		},
 	}
+	if _, err := n.client.CoreV1().Services(n.Namespace).Create(svc); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func (n *Nginx) getPingPodSpecs() *v1.Pod {
+func (n *Nginx) newPingPod(reachable bool) error {
 	name := fmt.Sprintf("%s-ping-pod-%s", n.Name, utilrand.String(5))
-	return &v1.Pod{
+	cmd := fmt.Sprintf("wget --timeout 5 %s", n.Name)
+	if !reachable {
+		cmd = fmt.Sprintf("! %s", cmd)
+	}
+
+	runcmd := []string{"/bin/sh", "-c"}
+	runcmd = append(runcmd, cmd)
+	p := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: n.Namespace,
@@ -224,10 +234,32 @@ func (n *Nginx) getPingPodSpecs() *v1.Pod {
 				{
 					Name:    "ping-container",
 					Image:   "alpine:3.6",
-					Command: []string{"wget", "--timeout", "5", n.SVCName},
+					Command: runcmd,
 				},
 			},
 			RestartPolicy: v1.RestartPolicyNever,
 		},
 	}
+
+	if _, err := n.client.CoreV1().Pods(n.Namespace).Create(p); err != nil {
+		return err
+	}
+
+	// wait for pod state
+	if err := wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
+		p, err := n.client.CoreV1().Pods(n.Namespace).Get(p.GetName(), metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		if p.Status.Phase != v1.PodSucceeded {
+			return false, nil
+		}
+
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("pod didn't succeed: %v", err)
+	}
+
+	return nil
 }

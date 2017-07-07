@@ -1,12 +1,11 @@
 package tests
 
 import (
+	"fmt"
 	"testing"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"fmt"
 
 	"github.com/coreos/ktestutil/nginx"
 )
@@ -58,12 +57,12 @@ func checkRunningPodsCount(nginx *nginx.Nginx) func(*testing.T) {
 
 func checkSerivceExists(nginx *nginx.Nginx) func(*testing.T) {
 	return func(t *testing.T) {
-		_, err := client.CoreV1().Services(namespace).Get(nginx.SVCName, metav1.GetOptions{})
+		_, err := client.CoreV1().Services(namespace).Get(nginx.Name, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				t.Fatalf("not found service %s: %v", nginx.SVCName, err)
+				t.Fatalf("not found service %s: %v", nginx.Name, err)
 			}
-			t.Fatalf("error finding service %s: %v", nginx.SVCName, err)
+			t.Fatalf("error finding service %s: %v", nginx.Name, err)
 		}
 	}
 }
