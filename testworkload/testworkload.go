@@ -12,6 +12,7 @@ import (
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api/v1"
+	batchv1 "k8s.io/client-go/pkg/apis/batch/v1"
 	extensionsv1beta1 "k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
@@ -217,49 +218,56 @@ func (tw *TestWorkload) newNginxService() error {
 }
 
 func (tw *TestWorkload) newPingPod(reachable bool) error {
-	name := fmt.Sprintf("%s-ping-pod-%s", tw.Name, utilrand.String(5))
+	name := fmt.Sprintf("%s-ping-job-%s", tw.Name, utilrand.String(5))
+	deadline := int64(pollTimeout.Seconds())
+
 	cmd := fmt.Sprintf("wget --timeout 5 %s", tw.Name)
 	if !reachable {
 		cmd = fmt.Sprintf("! %s", cmd)
 	}
-
 	runcmd := []string{"/bin/sh", "-c"}
 	runcmd = append(runcmd, cmd)
-	p := &v1.Pod{
+
+	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: tw.Namespace,
 		},
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
-				{
-					Name:    "ping-container",
-					Image:   "alpine:3.6",
-					Command: runcmd,
+		Spec: batchv1.JobSpec{
+			ActiveDeadlineSeconds: &deadline,
+			Template: v1.PodTemplateSpec{
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:    "ping-container",
+							Image:   "alpine:3.6",
+							Command: runcmd,
+						},
+					},
+					RestartPolicy: v1.RestartPolicyOnFailure,
 				},
 			},
-			RestartPolicy: v1.RestartPolicyNever,
 		},
 	}
 
-	if _, err := tw.client.CoreV1().Pods(tw.Namespace).Create(p); err != nil {
+	if _, err := tw.client.BatchV1().Jobs(tw.Namespace).Create(job); err != nil {
 		return err
 	}
 
 	// wait for pod state
 	if err := wait.PollImmediate(pollInterval, pollTimeout, func() (bool, error) {
-		p, err := tw.client.CoreV1().Pods(tw.Namespace).Get(p.GetName(), metav1.GetOptions{})
+		j, err := tw.client.BatchV1().Jobs(tw.Namespace).Get(job.GetName(), metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
 
-		if p.Status.Phase != v1.PodSucceeded {
+		if j.Status.Succeeded < 1 {
 			return false, nil
 		}
 
 		return true, nil
 	}); err != nil {
-		return fmt.Errorf("pod didn't succeed: %v", err)
+		return fmt.Errorf("ping job didn't succeed: %v", err)
 	}
 
 	return nil
