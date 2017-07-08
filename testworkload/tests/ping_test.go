@@ -1,30 +1,29 @@
 package tests
 
 import (
+	"fmt"
 	"testing"
 	"time"
-
-	"fmt"
 
 	"github.com/coreos/ktestutil/testworkload"
 	"github.com/coreos/ktestutil/utils"
 )
 
 func TestReachable(t *testing.T) {
-	tw, err := testworkload.New(client, namespace)
+	n, err := testworkload.NewNginx(client, namespace)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tw.Delete()
+	defer n.Delete()
 
 	if err := utils.Retry(10, 2*time.Second, func() error {
-		return tw.IsReachable()
+		return n.IsReachable()
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := utils.Retry(10, 2*time.Second, func() error {
-		if err := tw.IsUnReachable(); err == nil {
+		if err := n.IsUnReachable(); err == nil {
 			return fmt.Errorf("error should be not nil")
 		}
 		return nil
@@ -33,20 +32,20 @@ func TestReachable(t *testing.T) {
 	}
 }
 func TestUnReachable(t *testing.T) {
-	tw, err := testworkload.New(client, namespace)
+	n, err := testworkload.NewNginx(client, namespace)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tw.Delete()
+	n.Delete()
 
 	if err := utils.Retry(10, 5*time.Second, func() error {
-		return tw.IsUnReachable()
+		return n.IsUnReachable()
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := utils.Retry(10, 2*time.Second, func() error {
-		if err := tw.IsReachable(); err == nil {
+		if err := n.IsReachable(); err == nil {
 			return fmt.Errorf("error should be not nil")
 		}
 		return nil
