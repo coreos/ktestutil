@@ -30,25 +30,40 @@ type Nginx struct {
 	// List of pods that belong to the deployment
 	Pods []*v1.Pod
 
-	client   kubernetes.Interface
-	labelSel *metav1.LabelSelector
+	client          kubernetes.Interface
+	podSelector     *metav1.LabelSelector
+	nodeSelector    *metav1.LabelSelector
+	pingPodSelector *metav1.LabelSelector
 }
+
+// NginxOpts defines func that applies custom options for Nginx
+type NginxOpts func(*Nginx) error
 
 // NewNginx create this nginx deployment/service pair.
 // It waits until all the pods in the deployment are running.
-func NewNginx(kc kubernetes.Interface, namespace string) (*Nginx, error) {
+func NewNginx(kc kubernetes.Interface, namespace string, options ...NginxOpts) (*Nginx, error) {
 	//create random suffix
 	name := fmt.Sprintf("nginx-%s", utilrand.String(5))
 
 	n := &Nginx{
 		Namespace: namespace,
 		Name:      name,
-		labelSel: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"app": name,
-			},
+		podSelector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{"app": name}},
+		nodeSelector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{},
+		},
+		pingPodSelector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{},
 		},
 		client: kc,
+	}
+
+	//apply options
+	for _, option := range options {
+		if err := option(n); err != nil {
+			return nil, fmt.Errorf("error invalid options: %v", err)
+		}
 	}
 
 	//create nginx deployment
@@ -73,7 +88,7 @@ func NewNginx(kc kubernetes.Interface, namespace string) (*Nginx, error) {
 	//wait for all pods to enter running phase
 	if err := wait.PollImmediate(PollIntervalForNginx, PollTimeoutForNginx, func() (bool, error) {
 		pl, err := kc.CoreV1().Pods(n.Namespace).List(metav1.ListOptions{
-			LabelSelector: metav1.FormatLabelSelector(n.labelSel),
+			LabelSelector: metav1.FormatLabelSelector(n.podSelector),
 		})
 		if err != nil {
 			return false, err
@@ -105,6 +120,39 @@ func NewNginx(kc kubernetes.Interface, namespace string) (*Nginx, error) {
 	}
 
 	return n, nil
+}
+
+// WithNginxSelector adds custom labels for Deployment's Selector field.
+// Affects only Deployment pods.
+func WithNginxSelector(labels map[string]string) NginxOpts {
+	return func(n *Nginx) error {
+		for k, v := range labels {
+			n.podSelector.MatchLabels[k] = v
+		}
+		return nil
+	}
+}
+
+// WithNginxNodeSelector adds custom labels for Pod's NodeSelector field
+// Affects only Deployment's pods.
+func WithNginxNodeSelector(labels map[string]string) NginxOpts {
+	return func(n *Nginx) error {
+		for k, v := range labels {
+			n.nodeSelector.MatchLabels[k] = v
+		}
+		return nil
+	}
+}
+
+// WithNginxPingJobLabels adds custom labels for PinJob's pods.
+// Affects only PingJob's pods.
+func WithNginxPingJobLabels(labels map[string]string) NginxOpts {
+	return func(n *Nginx) error {
+		for k, v := range labels {
+			n.pingPodSelector.MatchLabels[k] = v
+		}
+		return nil
+	}
 }
 
 // IsReachable pings the nginx service.
@@ -162,10 +210,10 @@ func (n *Nginx) newNginxDeployment() error {
 		},
 		Spec: extensionsv1beta1.DeploymentSpec{
 			Replicas: &repl,
-			Selector: n.labelSel,
+			Selector: n.podSelector,
 			Template: v1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: n.labelSel.MatchLabels,
+					Labels: n.podSelector.MatchLabels,
 				},
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{
@@ -179,6 +227,7 @@ func (n *Nginx) newNginxDeployment() error {
 							},
 						},
 					},
+					NodeSelector: n.nodeSelector.MatchLabels,
 				},
 			},
 		},
@@ -201,7 +250,7 @@ func (n *Nginx) newNginxService() error {
 			Namespace: n.Namespace,
 		},
 		Spec: v1.ServiceSpec{
-			Selector: n.labelSel.MatchLabels,
+			Selector: n.podSelector.MatchLabels,
 			Ports: []v1.ServicePort{
 				{
 					Protocol:   v1.ProtocolTCP,
@@ -236,6 +285,9 @@ func (n *Nginx) newPingPod(reachable bool) error {
 		Spec: batchv1.JobSpec{
 			ActiveDeadlineSeconds: &deadline,
 			Template: v1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: n.pingPodSelector.MatchLabels,
+				},
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{
 						{
