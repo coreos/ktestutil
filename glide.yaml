@@ -1,0 +1,30 @@
+package: github.com/coreos/ktestutil
+import:
+- package: k8s.io/apimachinery
+  version: abe34e4f5b4413c282a83011892cbeea5b32223b
+  subpackages:
+  - pkg/api/errors
+  - pkg/apis/meta/v1
+  - pkg/fields
+  - pkg/runtime
+  - pkg/util/wait
+  - pkg/watch
+- package: k8s.io/client-go
+  version: v4.0.0-beta.0
+  subpackages:
+  - kubernetes
+  - pkg/api
+  - pkg/api/v1
+  - rest
+  - tools/cache
+  - tools/clientcmd
+- package: k8s.io/kubernetes
+  version: v1.7.0
+  subpackages:
+  - pkg/kubectl/cmd/util
+  - pkg/kubectl/resource
+- package: golang.org/x/crypto/
+  version: 0fe963104e9d1877082f8fb38f816fcd97eb1d10
+  subpackages:
+  - ssh
+  - ssh/agent
