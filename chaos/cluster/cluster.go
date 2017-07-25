@@ -21,11 +21,24 @@ import (
 )
 
 const (
-	// We sleep 10 seconds to give some time for ssh command to cleanly finish.
-	cmdReboot          = "nohup sh -c 'sleep 10 && sudo ifconfig eth0 down && sudo systemctl stop kubelet && sudo reboot' >/dev/null 2>&1 &"
-	cmdRebootWithSleep = "nohup sh -c 'sleep 10 && sudo ifconfig eth0 down && sudo systemctl stop kubelet && sleep %ds && sudo reboot' >/dev/null 2>&1 &"
+	stallServiceTmpPath = "/tmp/stall.service"
+	stallServiceTpl     = `
+[Unit]
+Description=reboot stall
+DefaultDependencies=no
+Before=sysinit.target
 
-	cmdSystemUp = "sudo systemctl is-active kubelet"
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/sleep %ds
+
+[Install]
+WantedBy=sysinit.target
+`
+	cmdEnableStallService  = "sudo mv /tmp/stall.service /etc/systemd/system/stall.service && sudo systemctl daemon-reload && sudo systemctl enable stall.service"
+	cmdDisableStallService = "sudo systemctl disable stall.service"
+	cmdKernelPanic         = "nohup sh -c 'sleep 10 && echo b | sudo tee /proc/sysrq-trigger' >/dev/null 2>&1 &"
+	cmdSystemUp            = "sudo systemctl is-active kubelet"
 )
 
 // Cluster is a simple abstraction that stores cluster nodes.
@@ -115,34 +128,66 @@ func (cl *Cluster) RebootWorkers(rebootDuration time.Duration) error {
 // RebootNode reboots a node addressable with `host`.
 // Uses *Cluster sshClient.
 func (cl *Cluster) RebootNode(host string, rebootDuration time.Duration) error {
-	cmd := cmdReboot
-	if rebootDuration.Seconds() > 0 {
-		cmd = fmt.Sprintf(cmdRebootWithSleep, int(rebootDuration.Seconds()))
+	glog.V(4).Infof("node: %s enabling stall.service", host)
+	if err := cl.enableStallService(host, rebootDuration); err != nil {
+		return fmt.Errorf("node: %s error enabling stall.service: %v", host, err)
 	}
 
-	glog.V(4).Infof("node: %s rebooting", host)
-	glog.V(4).Infof("node: %s executing cmd: '%s'", host, cmd)
-	stdout, stderr, err := cl.sshClient.Exec(host, cmd)
+	glog.V(4).Infof("node: %s initiating kernel panic", host)
+	glog.V(4).Infof("node: %s executing cmd: '%s'", host, cmdKernelPanic)
+	stdout, stderr, err := cl.sshClient.Exec(host, cmdKernelPanic)
 	if _, ok := err.(*ssh.ExitMissingError); ok {
 		// A terminated session is perfectly normal during reboot.
 		err = nil
 	}
 	if err != nil {
-		return fmt.Errorf("node: %s issuing command failed\nstdout:%s\nstderr:%s", host, stdout, stderr)
+		return fmt.Errorf("node: %s issuing reboot command failed\nstdout:%s\nstderr:%s", host, stdout, stderr)
 	}
+
 	if err := cl.waitForDown(host); err != nil {
 		return fmt.Errorf("node: %s didn't go down", host)
 	}
 
-	glog.V(4).Infof("node: %s rebooted waiting for node to come back up", host)
-	if rebootDuration.Seconds() > 0 {
-		<-time.After(rebootDuration)
-	}
+	glog.V(4).Infof("node: %s waiting %s for node to come back up", host, rebootDuration)
+	<-time.After(rebootDuration)
 	if err := cl.waitForUp(host); err != nil {
 		return fmt.Errorf("node: %s didn't come back up", host)
 	}
-
 	glog.V(4).Infof("node: %s reboot successful", host)
+
+	glog.V(4).Infof("node: %s disabling stall.service", host)
+	if err := cl.disableStallService(host); err != nil {
+		return fmt.Errorf("node: %s error disabling stall.service: %v", host, err)
+	}
+
+	return nil
+}
+
+func (cl *Cluster) enableStallService(host string, stallVal time.Duration) error {
+	scp, err := utils.NewScpClient(cl.sshClient, host)
+	if err != nil {
+		return fmt.Errorf("error creating scp conn: %v", err)
+	}
+	f, err := scp.Create(stallServiceTmpPath)
+	if err != nil {
+		return fmt.Errorf("error creating %s: %v", stallServiceTmpPath, err)
+	}
+	data := fmt.Sprintf(stallServiceTpl, int(stallVal.Seconds()))
+	if _, err := f.Write([]byte(data)); err != nil {
+		return fmt.Errorf("error writing to %s: %v", stallServiceTmpPath, err)
+	}
+	stdout, stderr, err := cl.sshClient.Exec(host, cmdEnableStallService)
+	if err != nil {
+		return fmt.Errorf("node: %s enable stall.service failed\nstdout:%s\nstderr:%s", host, stdout, stderr)
+	}
+	return nil
+}
+
+func (cl *Cluster) disableStallService(host string) error {
+	stdout, stderr, err := cl.sshClient.Exec(host, cmdDisableStallService)
+	if err != nil {
+		return fmt.Errorf("node: %s disabling stall.service failed\nstdout:%s\nstderr:%s", host, stdout, stderr)
+	}
 	return nil
 }
 

@@ -99,7 +99,9 @@ func TestRebootAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	doneCh := make(chan struct{})
 	go func() {
+		defer func() { doneCh <- struct{}{} }()
 		if err := cluster.RebootAll(2 * time.Minute); err != nil {
 			t.Fatal(err)
 		}
@@ -108,6 +110,7 @@ func TestRebootAll(t *testing.T) {
 	hosts := hostsFromNodes(cluster.Masters)
 	hosts = append(hosts, hostsFromNodes(cluster.Workers)...)
 	checkAllRebooting(t, hosts)
+	<-doneCh
 }
 
 func TestRebootMasters(t *testing.T) {
@@ -119,7 +122,9 @@ func TestRebootMasters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	doneCh := make(chan struct{})
 	go func() {
+		defer func() { doneCh <- struct{}{} }()
 		if err := cluster.RebootMasters(2 * time.Minute); err != nil {
 			t.Fatal(err)
 		}
@@ -127,6 +132,7 @@ func TestRebootMasters(t *testing.T) {
 
 	hosts := hostsFromNodes(cluster.Masters)
 	checkAllRebooting(t, hosts)
+	<-doneCh
 }
 
 func TestRebootWorkers(t *testing.T) {
@@ -138,7 +144,9 @@ func TestRebootWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	doneCh := make(chan struct{})
 	go func() {
+		defer func() { doneCh <- struct{}{} }()
 		if err := cluster.RebootWorkers(2 * time.Minute); err != nil {
 			t.Fatal(err)
 		}
@@ -146,6 +154,7 @@ func TestRebootWorkers(t *testing.T) {
 
 	hosts := hostsFromNodes(cluster.Workers)
 	checkAllRebooting(t, hosts)
+	<-doneCh
 }
 
 func checkAllRebooting(t *testing.T, hosts []string) {

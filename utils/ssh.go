@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )
@@ -139,4 +140,19 @@ func (c *SSHClient) ExecWithCtx(ctx context.Context, host, cmd string) (stdout, 
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
 	}
+}
+
+// NewScpClient returns scp client with given host and ssh client.
+func NewScpClient(sshClient *SSHClient, host string) (*sftp.Client, error) {
+	if host == "" {
+		return nil, fmt.Errorf("error: empty host provided")
+	}
+
+	endpoint := fmt.Sprintf("%s:%d", host, sshClient.port)
+	client, err := ssh.Dial("tcp", endpoint, sshClient.ClientConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	return sftp.NewClient(client)
 }
